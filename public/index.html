@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SeeDance 2 Stitcher</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar">
+        <div>
+          <h1>SeeDance 2 Stitcher</h1>
+          <p>Find duplicate frames at a clip boundary, trim the overlap, and export a clean join.</p>
+        </div>
+        <button id="sampleButton" class="primary">Analyze sample videos</button>
+      </section>
+
+      <section class="workspace">
+        <aside class="panel upload-panel">
+          <div class="panel-title">Sources</div>
+          <label class="drop-zone" id="drop1">
+            <input id="video1Input" type="file" accept="video/*">
+            <span class="drop-title">Video 1</span>
+            <span class="drop-name" id="video1Name">Drop or choose first clip</span>
+          </label>
+          <label class="drop-zone" id="drop2">
+            <input id="video2Input" type="file" accept="video/*">
+            <span class="drop-title">Video 2</span>
+            <span class="drop-name" id="video2Name">Drop or choose second clip</span>
+          </label>
+          <button id="analyzeButton">Analyze uploaded clips</button>
+          <div id="status" class="status">Ready.</div>
+        </aside>
+
+        <section class="main-panel">
+          <div class="video-grid">
+            <div class="viewer">
+              <div class="viewer-header">
+                <span>End of video 1</span>
+                <span id="v1Meta"></span>
+              </div>
+              <video id="video1" controls muted playsinline></video>
+            </div>
+            <div class="viewer">
+              <div class="viewer-header">
+                <span>Start of video 2</span>
+                <span id="v2Meta"></span>
+              </div>
+              <video id="video2" controls muted playsinline></video>
+            </div>
+          </div>
+
+          <section class="analysis-grid">
+            <div class="panel recommendation">
+              <div class="panel-title">Suggested Join</div>
+              <div class="big-number" id="suggestedFrames">--</div>
+              <p id="suggestedText">Analyze clips to get an overlap recommendation.</p>
+              <div class="metrics">
+                <span id="confidence">confidence --</span>
+                <span id="matchScore">match --</span>
+                <span id="toneScore">tone --</span>
+              </div>
+            </div>
+
+            <div class="panel controls">
+              <div class="panel-title">Trim Controls</div>
+              <label>
+                <span>Trim end of video 1</span>
+                <input id="trimEnd1" type="range" min="0" max="96" value="0">
+                <output id="trimEnd1Out">0 frames</output>
+              </label>
+              <label>
+                <span>Trim start of video 2</span>
+                <input id="trimStart2" type="range" min="0" max="96" value="0">
+                <output id="trimStart2Out">0 frames</output>
+              </label>
+              <div class="segmented">
+                <button id="cutMode" class="active" data-mode="cut">Cut</button>
+                <button id="blendMode" data-mode="blend">Blend</button>
+              </div>
+              <label>
+                <span>Blend frames</span>
+                <input id="blendFrames" type="range" min="0" max="24" value="0">
+                <output id="blendFramesOut">0 frames</output>
+              </label>
+              <label class="toggle">
+                <input id="interpolate" type="checkbox">
+                <span>Export with motion interpolation</span>
+              </label>
+              <label class="toggle">
+                <input id="toneMatch" type="checkbox">
+                <span>Smooth brightness/contrast at join</span>
+              </label>
+              <label class="toggle">
+                <input id="toneFullClip" type="checkbox">
+                <span>Apply tone match to all of video 2</span>
+              </label>
+              <label>
+                <span>Tone smooth frames</span>
+                <input id="toneFrames" type="range" min="0" max="48" value="0">
+                <output id="toneFramesOut">0 frames</output>
+              </label>
+              <p class="tone-note" id="toneNote">Analyze clips to check for a luminance or contrast jump at the join.</p>
+              <p class="sound-note">For best joins, generate clips with diegetic sound effects and dialogue only. Add soundtrack or music after the joined edit, since music beds rarely overlap cleanly.</p>
+              <div class="progress-wrap" id="progressWrap" hidden>
+                <div class="progress-label">
+                  <span id="progressText">Waiting to export...</span>
+                  <span id="progressPercent">0%</span>
+                </div>
+                <progress id="exportProgress" value="0" max="100"></progress>
+              </div>
+              <button id="exportButton" class="primary" disabled>Export joined MP4</button>
+              <button id="collageButton" disabled>Export 5s stitch collage</button>
+              <button id="collage2Button" disabled>Export 2s stitch collage</button>
+            </div>
+          </section>
+
+          <section class="panel microscope">
+            <div class="panel-title">Boundary Frames</div>
+            <div id="frameStrip" class="frame-strip"></div>
+          </section>
+
+          <section class="panel output-panel" id="outputPanel" hidden>
+            <div class="panel-title">Output</div>
+            <video id="outputVideo" controls></video>
+            <a id="outputLink" class="download-link" href="#">Open exported video</a>
+          </section>
+        </section>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

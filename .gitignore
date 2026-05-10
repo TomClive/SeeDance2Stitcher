@@ -1,0 +1,7 @@
+data/
+samples/*.mp4
+*.log
+*.pid
+node_modules/
+.DS_Store
+Thumbs.db
