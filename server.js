@@ -4,6 +4,7 @@ const fsp = require("fs/promises");
 const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
+const zlib = require("zlib");
 const { execFile } = require("child_process");
 const { spawn } = require("child_process");
 
@@ -148,13 +149,198 @@ function fitFilter() {
   return "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1";
 }
 
-function labelFilter(text) {
-  const safeText = String(text)
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "")
-    .replace(/:/g, "\\:")
-    .replace(/%/g, "\\%");
-  return `drawtext=fontfile='C\\:/Windows/Fonts/arialbd.ttf':text='${safeText}':x=24:y=24:fontsize=30:fontcolor=white:box=1:boxcolor=black@0.68:boxborderw=12:expansion=none`;
+const LABEL_FONT = {
+  " ": ["   ", "   ", "   ", "   ", "   ", "   ", "   "],
+  "-": ["     ", "     ", "     ", "#####", "     ", "     ", "     "],
+  "+": ["     ", "  #  ", "  #  ", "#####", "  #  ", "  #  ", "     "],
+  ",": ["   ", "   ", "   ", "   ", "   ", " # ", "#  "],
+  ".": ["   ", "   ", "   ", "   ", "   ", "## ", "## "],
+  ":": ["   ", "## ", "## ", "   ", "## ", "## ", "   "],
+  "%": ["#   #", "   # ", "  #  ", " #   ", "#   #", "     ", "     "],
+  "/": ["    #", "   # ", "   # ", "  #  ", " #   ", " #   ", "#    "],
+  "?": [" ### ", "#   #", "    #", "   # ", "  #  ", "     ", "  #  "],
+  "0": [" ### ", "#   #", "#  ##", "# # #", "##  #", "#   #", " ### "],
+  "1": ["  #  ", " ##  ", "# #  ", "  #  ", "  #  ", "  #  ", "#####"],
+  "2": [" ### ", "#   #", "    #", "   # ", "  #  ", " #   ", "#####"],
+  "3": ["#### ", "    #", "    #", " ### ", "    #", "    #", "#### "],
+  "4": ["#   #", "#   #", "#   #", "#####", "    #", "    #", "    #"],
+  "5": ["#####", "#    ", "#    ", "#### ", "    #", "    #", "#### "],
+  "6": [" ### ", "#    ", "#    ", "#### ", "#   #", "#   #", " ### "],
+  "7": ["#####", "    #", "   # ", "  #  ", " #   ", " #   ", " #   "],
+  "8": [" ### ", "#   #", "#   #", " ### ", "#   #", "#   #", " ### "],
+  "9": [" ### ", "#   #", "#   #", " ####", "    #", "    #", " ### "],
+  "A": [" ### ", "#   #", "#   #", "#####", "#   #", "#   #", "#   #"],
+  "B": ["#### ", "#   #", "#   #", "#### ", "#   #", "#   #", "#### "],
+  "C": [" ### ", "#   #", "#    ", "#    ", "#    ", "#   #", " ### "],
+  "D": ["#### ", "#   #", "#   #", "#   #", "#   #", "#   #", "#### "],
+  "E": ["#####", "#    ", "#    ", "#### ", "#    ", "#    ", "#####"],
+  "F": ["#####", "#    ", "#    ", "#### ", "#    ", "#    ", "#    "],
+  "G": [" ### ", "#   #", "#    ", "# ###", "#   #", "#   #", " ### "],
+  "H": ["#   #", "#   #", "#   #", "#####", "#   #", "#   #", "#   #"],
+  "I": ["#####", "  #  ", "  #  ", "  #  ", "  #  ", "  #  ", "#####"],
+  "J": ["#####", "    #", "    #", "    #", "    #", "#   #", " ### "],
+  "K": ["#   #", "#  # ", "# #  ", "##   ", "# #  ", "#  # ", "#   #"],
+  "L": ["#    ", "#    ", "#    ", "#    ", "#    ", "#    ", "#####"],
+  "M": ["#   #", "## ##", "# # #", "#   #", "#   #", "#   #", "#   #"],
+  "N": ["#   #", "##  #", "# # #", "#  ##", "#   #", "#   #", "#   #"],
+  "O": [" ### ", "#   #", "#   #", "#   #", "#   #", "#   #", " ### "],
+  "P": ["#### ", "#   #", "#   #", "#### ", "#    ", "#    ", "#    "],
+  "Q": [" ### ", "#   #", "#   #", "#   #", "# # #", "#  # ", " ## #"],
+  "R": ["#### ", "#   #", "#   #", "#### ", "# #  ", "#  # ", "#   #"],
+  "S": [" ####", "#    ", "#    ", " ### ", "    #", "    #", "#### "],
+  "T": ["#####", "  #  ", "  #  ", "  #  ", "  #  ", "  #  ", "  #  "],
+  "U": ["#   #", "#   #", "#   #", "#   #", "#   #", "#   #", " ### "],
+  "V": ["#   #", "#   #", "#   #", "#   #", "#   #", " # # ", "  #  "],
+  "W": ["#   #", "#   #", "#   #", "#   #", "# # #", "## ##", "#   #"],
+  "X": ["#   #", "#   #", " # # ", "  #  ", " # # ", "#   #", "#   #"],
+  "Y": ["#   #", "#   #", " # # ", "  #  ", "  #  ", "  #  ", "  #  "],
+  "Z": ["#####", "    #", "   # ", "  #  ", " #   ", "#    ", "#####"]
+};
+
+let crcTable;
+
+function crc32(buffer) {
+  if (!crcTable) {
+    crcTable = Array.from({ length: 256 }, (_, index) => {
+      let value = index;
+      for (let bit = 0; bit < 8; bit += 1) {
+        value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+      }
+      return value >>> 0;
+    });
+  }
+  let crc = 0xffffffff;
+  for (const byte of buffer) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type, data = Buffer.alloc(0)) {
+  const typeBuffer = Buffer.from(type, "ascii");
+  const length = Buffer.alloc(4);
+  const crc = Buffer.alloc(4);
+  length.writeUInt32BE(data.length);
+  crc.writeUInt32BE(crc32(Buffer.concat([typeBuffer, data])));
+  return Buffer.concat([length, typeBuffer, data, crc]);
+}
+
+function encodePng(width, height, rgba) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const scanlineLength = width * 4 + 1;
+  const scanlines = Buffer.alloc(scanlineLength * height);
+  for (let y = 0; y < height; y += 1) {
+    const sourceStart = y * width * 4;
+    const targetStart = y * scanlineLength + 1;
+    rgba.copy(scanlines, targetStart, sourceStart, sourceStart + width * 4);
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", zlib.deflateSync(scanlines)),
+    pngChunk("IEND")
+  ]);
+}
+
+function glyphFor(char) {
+  return LABEL_FONT[char] || LABEL_FONT["?"];
+}
+
+function textPixelWidth(text, scale) {
+  let width = 0;
+  for (const char of text) width += (glyphFor(char)[0].length + 1) * scale;
+  return Math.max(0, width - scale);
+}
+
+function wrapLabelText(text, maxWidth, scale) {
+  const words = String(text).toUpperCase().replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  const lines = [];
+  let current = "";
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (!current || textPixelWidth(candidate, scale) <= maxWidth) {
+      current = candidate;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  if (!lines.length) lines.push("");
+
+  let truncated = lines.length > 2;
+  const visible = lines.slice(0, 2);
+  for (let index = 0; index < visible.length; index += 1) {
+    if (textPixelWidth(visible[index], scale) <= maxWidth) continue;
+    truncated = true;
+    while (visible[index] && textPixelWidth(`${visible[index]}...`, scale) > maxWidth) {
+      visible[index] = visible[index].slice(0, -1).trimEnd();
+    }
+    visible[index] = `${visible[index]}...`;
+  }
+  if (truncated) {
+    let last = visible[visible.length - 1] || "";
+    while (last && textPixelWidth(`${last}...`, scale) > maxWidth) {
+      last = last.slice(0, -1).trimEnd();
+    }
+    visible[visible.length - 1] = `${last}...`;
+  }
+  return { lines: visible, truncated };
+}
+
+function setPixel(rgba, width, x, y, color) {
+  const index = (y * width + x) * 4;
+  rgba[index] = color[0];
+  rgba[index + 1] = color[1];
+  rgba[index + 2] = color[2];
+  rgba[index + 3] = color[3];
+}
+
+function fillRect(rgba, width, x, y, rectWidth, rectHeight, color) {
+  for (let yy = y; yy < y + rectHeight; yy += 1) {
+    for (let xx = x; xx < x + rectWidth; xx += 1) {
+      setPixel(rgba, width, xx, yy, color);
+    }
+  }
+}
+
+function drawBitmapText(rgba, width, x, y, line, scale) {
+  let cursor = x;
+  for (const char of line) {
+    const glyph = glyphFor(char);
+    for (let gy = 0; gy < glyph.length; gy += 1) {
+      for (let gx = 0; gx < glyph[gy].length; gx += 1) {
+        if (glyph[gy][gx] !== "#") continue;
+        fillRect(rgba, width, cursor + gx * scale, y + gy * scale, scale, scale, [255, 255, 255, 255]);
+      }
+    }
+    cursor += (glyph[0].length + 1) * scale;
+  }
+}
+
+async function writeLabelImage(text, targetPath) {
+  const paddingX = 16;
+  const paddingY = 12;
+  const lineGap = 8;
+  const maxWidth = 1232;
+  let scale = 4;
+  let wrapped = wrapLabelText(text, maxWidth - paddingX * 2, scale);
+  while (wrapped.truncated && scale > 2) {
+    scale -= 1;
+    wrapped = wrapLabelText(text, maxWidth - paddingX * 2, scale);
+  }
+
+  const textWidth = Math.max(...wrapped.lines.map(line => textPixelWidth(line, scale)));
+  const width = Math.min(maxWidth, Math.max(1, textWidth + paddingX * 2));
+  const height = paddingY * 2 + wrapped.lines.length * 7 * scale + (wrapped.lines.length - 1) * lineGap;
+  const rgba = Buffer.alloc(width * height * 4);
+  fillRect(rgba, width, 0, 0, width, height, [0, 0, 0, 174]);
+  wrapped.lines.forEach((line, index) => {
+    drawBitmapText(rgba, width, paddingX, paddingY + index * (7 * scale + lineGap), line, scale);
+  });
+  await fsp.writeFile(targetPath, encodePng(width, height, rgba));
 }
 
 function stitchLabel(options, tone) {
@@ -727,11 +913,19 @@ async function handleExportCollage(req, res) {
       toneFrames,
       interpolate
     }, toneSource);
+    const labelId = crypto.randomUUID();
+    const topLabelPath = path.join(OUTPUTS, `${labelId}-top-label.png`);
+    const bottomLabelPath = path.join(OUTPUTS, `${labelId}-bottom-label.png`);
+    await Promise.all([
+      writeLabelImage("ORIGINAL JOIN - no edit", topLabelPath),
+      writeLabelImage(bottomLabel, bottomLabelPath)
+    ]);
 
     const filters = [
       `[0:v]trim=start=${rawStart1.toFixed(6)}:end=${rawEnd1.toFixed(6)},setpts=PTS-STARTPTS,${scale},format=yuv420p[top0]`,
       `[1:v]trim=start=0:end=${topPost.toFixed(6)},setpts=PTS-STARTPTS,${scale},format=yuv420p[top1]`,
-      `[top0][top1]concat=n=2:v=1:a=0,${labelFilter("ORIGINAL JOIN - no edit")}[top]`
+      `[top0][top1]concat=n=2:v=1:a=0[topbase]`,
+      `[topbase][2:v]overlay=x=24:y=24:shortest=1:format=auto[top]`
     ];
 
     const hasAudio = session.meta1.hasAudio && session.meta2.hasAudio;
@@ -753,7 +947,7 @@ async function handleExportCollage(req, res) {
         `[b1fade]trim=start=0:end=${blendDuration.toFixed(6)},setpts=PTS-STARTPTS[b1b]`,
         `[b1post]trim=start=${blendDuration.toFixed(6)}:end=${postLen.toFixed(6)},setpts=PTS-STARTPTS[bpost]`,
         `[b0b][b1b]blend=all_expr='${expr}'[bmix]`,
-        `[bpre][bmix][bpost]concat=n=3:v=1:a=0,trim=start=0:end=${collageSeconds.toFixed(6)},setpts=PTS-STARTPTS,${labelFilter(bottomLabel)}[bottom]`
+        `[bpre][bmix][bpost]concat=n=3:v=1:a=0,trim=start=0:end=${collageSeconds.toFixed(6)},setpts=PTS-STARTPTS[bottombase]`
       );
       if (hasAudio) {
         filters.push(
@@ -766,7 +960,7 @@ async function handleExportCollage(req, res) {
       filters.push(
         `[0:v]trim=start=${bottomStart1.toFixed(6)}:end=${end1.toFixed(6)},setpts=PTS-STARTPTS,${scale},format=yuv420p[bottom0]`,
         `[1:v]trim=start=${start2.toFixed(6)}:end=${(start2 + halfCollage).toFixed(6)},setpts=PTS-STARTPTS,${v2ToneFilter}${scale},format=yuv420p[bottom1]`,
-        `[bottom0][bottom1]concat=n=2:v=1:a=0,trim=start=0:end=${collageSeconds.toFixed(6)},setpts=PTS-STARTPTS,${labelFilter(bottomLabel)}[bottom]`
+        `[bottom0][bottom1]concat=n=2:v=1:a=0,trim=start=0:end=${collageSeconds.toFixed(6)},setpts=PTS-STARTPTS[bottombase]`
       );
       if (hasAudio) {
         filters.push(
@@ -777,12 +971,15 @@ async function handleExportCollage(req, res) {
       }
     }
 
+    filters.push(`[bottombase][3:v]overlay=x=24:y=24:shortest=1:format=auto[bottom]`);
     filters.push(`[top][bottom]vstack=inputs=2,format=yuv420p[vout]`);
 
     const args = [
       "-y",
       "-i", session.video1,
       "-i", session.video2,
+      "-loop", "1", "-i", topLabelPath,
+      "-loop", "1", "-i", bottomLabelPath,
       "-filter_complex", filters.join(";"),
       "-map", "[vout]",
       ...(hasAudio ? ["-map", "[aout]"] : ["-an"]),
@@ -806,6 +1003,7 @@ async function handleExportCollage(req, res) {
       url: `/outputs/${path.basename(output)}`,
       error: "",
       stderr: "",
+      tempFiles: [topLabelPath, bottomLabelPath],
       startedAt: Date.now()
     };
     exportJobs.set(jobId, job);
@@ -817,6 +1015,14 @@ async function handleExportCollage(req, res) {
 }
 
 function startExportJob(job, args, expectedSeconds) {
+  let cleanedUp = false;
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    for (const file of job.tempFiles || []) {
+      fsp.unlink(file).catch(() => {});
+    }
+  };
   const child = spawn(FFMPEG, args, {
     cwd: ROOT,
     windowsHide: true,
@@ -853,6 +1059,7 @@ function startExportJob(job, args, expectedSeconds) {
     job.status = "error";
     job.error = explainMissingTool(error, FFMPEG);
     job.message = "Export failed.";
+    cleanup();
   });
 
   child.on("close", code => {
@@ -865,6 +1072,7 @@ function startExportJob(job, args, expectedSeconds) {
       job.error = `ffmpeg exited with code ${code}`;
       job.message = "Export failed.";
     }
+    cleanup();
   });
 }
 
