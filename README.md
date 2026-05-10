@@ -19,15 +19,24 @@ Local browser tool for stitching two SeeDance 2 video generations when the end o
 - Node.js 18+
 - FFmpeg and FFprobe available on your machine
 
+On macOS and Linux, the app uses `ffmpeg` and `ffprobe` from your `PATH`.
+
 On Windows, the app will first look for FFmpeg at:
 
 `C:\Program Files\ffmpeg-6.0-full_build-shared\bin\ffmpeg.exe`
 
-You can override paths with environment variables:
+You can override paths with environment variables.
 
 ```powershell
 $env:FFMPEG_PATH="C:\path\to\ffmpeg.exe"
 $env:FFPROBE_PATH="C:\path\to\ffprobe.exe"
+```
+
+On macOS/Linux:
+
+```bash
+export FFMPEG_PATH="/path/to/ffmpeg"
+export FFPROBE_PATH="/path/to/ffprobe"
 ```
 
 ## Run

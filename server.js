@@ -14,8 +14,12 @@ const UPLOADS = path.join(DATA, "uploads");
 const OUTPUTS = path.join(DATA, "outputs");
 const SAMPLE_1 = process.env.SAMPLE_VIDEO1 || path.join(ROOT, "samples", "video1.mp4");
 const SAMPLE_2 = process.env.SAMPLE_VIDEO2 || path.join(ROOT, "samples", "video2.mp4");
-const FFMPEG = process.env.FFMPEG_PATH || "C:\\Program Files\\ffmpeg-6.0-full_build-shared\\bin\\ffmpeg.exe";
-const FFPROBE = process.env.FFPROBE_PATH || "C:\\Program Files\\ffmpeg-6.0-full_build-shared\\bin\\ffprobe.exe";
+const WINDOWS_FFMPEG = "C:\\Program Files\\ffmpeg-6.0-full_build-shared\\bin\\ffmpeg.exe";
+const WINDOWS_FFPROBE = "C:\\Program Files\\ffmpeg-6.0-full_build-shared\\bin\\ffprobe.exe";
+const DEFAULT_FFMPEG = process.platform === "win32" ? WINDOWS_FFMPEG : "ffmpeg";
+const DEFAULT_FFPROBE = process.platform === "win32" ? WINDOWS_FFPROBE : "ffprobe";
+const FFMPEG = process.env.FFMPEG_PATH || DEFAULT_FFMPEG;
+const FFPROBE = process.env.FFPROBE_PATH || DEFAULT_FFPROBE;
 const ANALYSIS_WIDTH = 160;
 const ANALYSIS_HEIGHT = 90;
 const WINDOW_FRAMES = 96;
@@ -23,11 +27,26 @@ const WINDOW_FRAMES = 96;
 const sessions = new Map();
 const exportJobs = new Map();
 
+function ffToolInfo(command) {
+  const executable = String(command).split(/[\\/]/).pop().toLowerCase();
+  if (executable.startsWith("ffprobe")) return { name: "FFprobe", env: "FFPROBE_PATH" };
+  if (executable.startsWith("ffmpeg")) return { name: "FFmpeg", env: "FFMPEG_PATH" };
+  return null;
+}
+
+function explainMissingTool(error, command) {
+  if (error.code !== "ENOENT") return error.message;
+  const tool = ffToolInfo(command);
+  if (!tool) return error.message;
+  return `${tool.name} was not found at "${command}". Install FFmpeg or set ${tool.env} before running npm start.`;
+}
+
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     execFile(command, args, { maxBuffer: 1024 * 1024 * 256, ...options }, (error, stdout, stderr) => {
       if (error) {
         error.stderr = stderr?.toString?.() || "";
+        error.message = explainMissingTool(error, command);
         reject(error);
         return;
       }
@@ -832,7 +851,7 @@ function startExportJob(job, args, expectedSeconds) {
 
   child.on("error", error => {
     job.status = "error";
-    job.error = error.message;
+    job.error = explainMissingTool(error, FFMPEG);
     job.message = "Export failed.";
   });
 
