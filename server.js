@@ -117,6 +117,9 @@ function outputName(session, options) {
   if (options.toneMatch && options.toneScope === "full") parts.push("tonefull");
   if (options.toneMatch && options.toneScope !== "full" && options.toneFrames > 0) parts.push(`tone${options.toneFrames}f`);
   if (options.interpolate) parts.push("mi");
+  if (options.audioMode && options.audioMode !== "micro_crossfade") {
+    parts.push(`a-${options.audioMode.replace(/_/g, "")}`);
+  }
   if (options.collage) parts.push(`cmp${options.collageSeconds || 5}s`);
   return `${parts.join("_")}.mp4`;
 }
@@ -763,6 +766,7 @@ async function handleExport(req, res) {
     const toneFrames = clampNumber(body.toneFrames, 0, 48);
     const toneScope = body.toneScope === "full" ? "full" : "join";
     const toneMatch = Boolean(body.toneMatch) && (toneScope === "full" || toneFrames > 0);
+    const audioMode = ["micro_crossfade", "clean_cut", "hard_cut"].includes(body.audioMode) ? body.audioMode : "micro_crossfade";
     const output = uniqueOutputPath(outputName(session, {
       trimEnd1,
       trimStart2,
@@ -771,7 +775,8 @@ async function handleExport(req, res) {
       toneMatch,
       toneScope,
       toneFrames,
-      interpolate
+      interpolate,
+      audioMode
     }));
     const end1 = Math.max(1 / fps, (session.meta1.frames - trimEnd1) / fps);
     const start2 = trimStart2 / fps;
@@ -809,14 +814,33 @@ async function handleExport(req, res) {
 
     const hasAudio = session.meta1.hasAudio && session.meta2.hasAudio;
     if (hasAudio) {
-      const audioParts = [
-        `[0:a:0]atrim=start=0:end=${end1.toFixed(6)},asetpts=PTS-STARTPTS[a0]`,
-        `[1:a:0]atrim=start=${start2.toFixed(6)},asetpts=PTS-STARTPTS[a1]`
-      ];
+      const audioParts = [];
+      const transitionDuration = Math.max(1.0 / fps, 5.0 / fps);
       if (mode === "blend" && blendDuration > 0) {
-        audioParts.push(`[a0][a1]acrossfade=d=${blendDuration.toFixed(6)}:c1=tri:c2=tri[aout]`);
-      } else {
-        audioParts.push(`[a0][a1]concat=n=2:v=0:a=1[aout]`);
+        audioParts.push(
+          `[0:a:0]atrim=start=0:end=${end1.toFixed(6)},asetpts=PTS-STARTPTS[a0]`,
+          `[1:a:0]atrim=start=${start2.toFixed(6)},asetpts=PTS-STARTPTS[a1]`,
+          `[a0][a1]acrossfade=d=${blendDuration.toFixed(6)}:c1=tri:c2=tri[aout]`
+        );
+      } else if (audioMode === "micro_crossfade") {
+        audioParts.push(
+          `[0:a:0]atrim=start=0:end=${end1.toFixed(6)},asetpts=PTS-STARTPTS[a0]`,
+          `[1:a:0]atrim=start=${start2.toFixed(6)},asetpts=PTS-STARTPTS[a1]`,
+          `[a0][a1]acrossfade=d=${transitionDuration.toFixed(6)}:c1=qsin:c2=qsin[aout]`
+        );
+      } else if (audioMode === "clean_cut") {
+        const fadeOutStart = Math.max(0, end1 - transitionDuration);
+        audioParts.push(
+          `[0:a:0]atrim=start=0:end=${end1.toFixed(6)},afade=t=out:st=${fadeOutStart.toFixed(6)}:d=${transitionDuration.toFixed(6)},asetpts=PTS-STARTPTS[a0]`,
+          `[1:a:0]atrim=start=${start2.toFixed(6)},afade=t=in:st=0:d=${transitionDuration.toFixed(6)},asetpts=PTS-STARTPTS[a1]`,
+          `[a0][a1]concat=n=2:v=0:a=1[aout]`
+        );
+      } else { // hard_cut
+        audioParts.push(
+          `[0:a:0]atrim=start=0:end=${end1.toFixed(6)},asetpts=PTS-STARTPTS[a0]`,
+          `[1:a:0]atrim=start=${start2.toFixed(6)},asetpts=PTS-STARTPTS[a1]`,
+          `[a0][a1]concat=n=2:v=0:a=1[aout]`
+        );
       }
       filter += `;${audioParts.join(";")}`;
     }
@@ -880,6 +904,7 @@ async function handleExportCollage(req, res) {
     const toneMatch = Boolean(body.toneMatch) && (toneScope === "full" || toneFrames > 0);
     const collageSeconds = Number(body.collageSeconds) === 2 ? 2 : 5;
     const halfCollage = collageSeconds / 2;
+    const audioMode = ["micro_crossfade", "clean_cut", "hard_cut"].includes(body.audioMode) ? body.audioMode : "micro_crossfade";
     const output = uniqueOutputPath(outputName(session, {
       trimEnd1,
       trimStart2,
@@ -890,7 +915,8 @@ async function handleExportCollage(req, res) {
       toneFrames,
       interpolate,
       collage: true,
-      collageSeconds
+      collageSeconds,
+      audioMode
     }));
 
     const rawEnd1 = session.meta1.frames / fps;
@@ -963,11 +989,27 @@ async function handleExportCollage(req, res) {
         `[bottom0][bottom1]concat=n=2:v=1:a=0,trim=start=0:end=${collageSeconds.toFixed(6)},setpts=PTS-STARTPTS[bottombase]`
       );
       if (hasAudio) {
-        filters.push(
-          `[0:a:0]atrim=start=${bottomStart1.toFixed(6)}:end=${end1.toFixed(6)},asetpts=PTS-STARTPTS[ba0]`,
-          `[1:a:0]atrim=start=${start2.toFixed(6)}:end=${(start2 + halfCollage).toFixed(6)},asetpts=PTS-STARTPTS[ba1]`,
-          `[ba0][ba1]concat=n=2:v=0:a=1,atrim=start=0:end=${collageSeconds.toFixed(6)},asetpts=PTS-STARTPTS[aout]`
-        );
+        const transitionDuration = Math.max(1.0 / fps, 5.0 / fps);
+        if (audioMode === "micro_crossfade") {
+          filters.push(
+            `[0:a:0]atrim=start=${bottomStart1.toFixed(6)}:end=${end1.toFixed(6)},asetpts=PTS-STARTPTS[ba0]`,
+            `[1:a:0]atrim=start=${start2.toFixed(6)}:end=${(start2 + halfCollage).toFixed(6)},asetpts=PTS-STARTPTS[ba1]`,
+            `[ba0][ba1]acrossfade=d=${transitionDuration.toFixed(6)}:c1=qsin:c2=qsin,atrim=start=0:end=${collageSeconds.toFixed(6)},asetpts=PTS-STARTPTS[aout]`
+          );
+        } else if (audioMode === "clean_cut") {
+          const fadeOutStart = Math.max(0, end1 - transitionDuration);
+          filters.push(
+            `[0:a:0]atrim=start=${bottomStart1.toFixed(6)}:end=${end1.toFixed(6)},afade=t=out:st=${fadeOutStart.toFixed(6)}:d=${transitionDuration.toFixed(6)},asetpts=PTS-STARTPTS[ba0]`,
+            `[1:a:0]atrim=start=${start2.toFixed(6)}:end=${(start2 + halfCollage).toFixed(6)},afade=t=in:st=0:d=${transitionDuration.toFixed(6)},asetpts=PTS-STARTPTS[ba1]`,
+            `[ba0][ba1]concat=n=2:v=0:a=1,atrim=start=0:end=${collageSeconds.toFixed(6)},asetpts=PTS-STARTPTS[aout]`
+          );
+        } else { // hard_cut
+          filters.push(
+            `[0:a:0]atrim=start=${bottomStart1.toFixed(6)}:end=${end1.toFixed(6)},asetpts=PTS-STARTPTS[ba0]`,
+            `[1:a:0]atrim=start=${start2.toFixed(6)}:end=${(start2 + halfCollage).toFixed(6)},asetpts=PTS-STARTPTS[ba1]`,
+            `[ba0][ba1]concat=n=2:v=0:a=1,atrim=start=0:end=${collageSeconds.toFixed(6)},asetpts=PTS-STARTPTS[aout]`
+          );
+        }
       }
     }
 

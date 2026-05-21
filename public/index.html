@@ -102,6 +102,14 @@
                 <output id="toneFramesOut">0 frames</output>
               </label>
               <p class="tone-note" id="toneNote">Analyze clips to check for a luminance or contrast jump at the join.</p>
+              <label style="margin-top: 1rem; display: block;">
+                <span>Audio Transition</span>
+                <div class="segmented" id="audioModeSegmented" style="margin-top: 0.5rem; grid-template-columns: 1fr 1fr 1fr;">
+                  <button type="button" id="audioSeamless" class="active" data-audio-mode="micro_crossfade" disabled>Seamless (Crossfade)</button>
+                  <button type="button" id="audioCleanCut" data-audio-mode="clean_cut" disabled>Clean Cut (Fades)</button>
+                  <button type="button" id="audioHardCut" data-audio-mode="hard_cut" disabled>Hard Cut</button>
+                </div>
+              </label>
               <p class="sound-note">For best joins, generate clips with diegetic sound effects and dialogue only. Add soundtrack or music after the joined edit, since music beds rarely overlap cleanly.</p>
               <div class="progress-wrap" id="progressWrap" hidden>
                 <div class="progress-label">

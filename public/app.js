@@ -1,7 +1,8 @@
 const state = {
   files: { video1: null, video2: null },
   session: null,
-  mode: "cut"
+  mode: "cut",
+  audioMode: "micro_crossfade"
 };
 
 const els = {
@@ -45,7 +46,10 @@ const els = {
   interpolate: document.querySelector("#interpolate"),
   frameStrip: document.querySelector("#frameStrip"),
   cutMode: document.querySelector("#cutMode"),
-  blendMode: document.querySelector("#blendMode")
+  blendMode: document.querySelector("#blendMode"),
+  audioSeamless: document.querySelector("#audioSeamless"),
+  audioCleanCut: document.querySelector("#audioCleanCut"),
+  audioHardCut: document.querySelector("#audioHardCut")
 };
 
 function setStatus(message, kind = "normal") {
@@ -136,6 +140,15 @@ for (const button of [els.cutMode, els.blendMode]) {
   });
 }
 
+for (const button of [els.audioSeamless, els.audioCleanCut, els.audioHardCut]) {
+  button.addEventListener("click", () => {
+    state.audioMode = button.dataset.audioMode;
+    els.audioSeamless.classList.toggle("active", state.audioMode === "micro_crossfade");
+    els.audioCleanCut.classList.toggle("active", state.audioMode === "clean_cut");
+    els.audioHardCut.classList.toggle("active", state.audioMode === "hard_cut");
+  });
+}
+
 async function analyzeSample() {
   setStatus("Analysing bundled sample videos...");
   await analyzeRequest(fetch("/api/analyze", {
@@ -162,6 +175,9 @@ async function analyzeRequest(promise) {
     els.exportButton.disabled = true;
     els.collageButton.disabled = true;
     els.collage2Button.disabled = true;
+    els.audioSeamless.disabled = true;
+    els.audioCleanCut.disabled = true;
+    els.audioHardCut.disabled = true;
     const response = await promise;
     const payload = await response.json();
     if (!response.ok || payload.error) throw new Error(payload.detail || payload.error || "Analysis failed");
@@ -196,6 +212,14 @@ function applyAnalysis(payload) {
   state.mode = "cut";
   els.cutMode.classList.add("active");
   els.blendMode.classList.remove("active");
+
+  state.audioMode = "micro_crossfade";
+  els.audioSeamless.classList.add("active");
+  els.audioCleanCut.classList.remove("active");
+  els.audioHardCut.classList.remove("active");
+  els.audioSeamless.disabled = false;
+  els.audioCleanCut.disabled = false;
+  els.audioHardCut.disabled = false;
 
   const rec = payload.analysis.recommended;
   els.suggestedFrames.textContent = `${rec.overlapFrames}`;
@@ -274,6 +298,9 @@ async function startExport(endpoint, message, extra = {}) {
   els.exportButton.disabled = true;
   els.collageButton.disabled = true;
   els.collage2Button.disabled = true;
+  els.audioSeamless.disabled = true;
+  els.audioCleanCut.disabled = true;
+  els.audioHardCut.disabled = true;
   try {
     const response = await fetch(endpoint, {
       method: "POST",
@@ -288,6 +315,7 @@ async function startExport(endpoint, message, extra = {}) {
         toneScope: els.toneFullClip.checked ? "full" : "join",
         toneFrames: Number(els.toneFrames.value),
         interpolate: els.interpolate.checked,
+        audioMode: state.audioMode,
         ...extra
       })
     });
@@ -300,6 +328,9 @@ async function startExport(endpoint, message, extra = {}) {
     els.exportButton.disabled = false;
     els.collageButton.disabled = false;
     els.collage2Button.disabled = false;
+    els.audioSeamless.disabled = false;
+    els.audioCleanCut.disabled = false;
+    els.audioHardCut.disabled = false;
   }
 }
 
@@ -319,6 +350,9 @@ async function pollExport(statusUrl) {
       els.exportButton.disabled = false;
       els.collageButton.disabled = false;
       els.collage2Button.disabled = false;
+      els.audioSeamless.disabled = false;
+      els.audioCleanCut.disabled = false;
+      els.audioHardCut.disabled = false;
       return;
     }
 
