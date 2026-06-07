@@ -820,13 +820,14 @@ async function handleExport(req, res) {
         audioParts.push(
           `[0:a:0]atrim=start=0:end=${end1.toFixed(6)},asetpts=PTS-STARTPTS[a0]`,
           `[1:a:0]atrim=start=${start2.toFixed(6)},asetpts=PTS-STARTPTS[a1]`,
-          `[a0][a1]acrossfade=d=${blendDuration.toFixed(6)}:c1=tri:c2=tri[aout]`
+          `[a0][a1]acrossfade=d=${blendDuration.toFixed(6)}:c1=qsin:c2=qsin[aout]`
         );
       } else if (audioMode === "micro_crossfade") {
+        const fadeOutStart = Math.max(0, end1 - transitionDuration);
         audioParts.push(
-          `[0:a:0]atrim=start=0:end=${end1.toFixed(6)},asetpts=PTS-STARTPTS[a0]`,
-          `[1:a:0]atrim=start=${start2.toFixed(6)},asetpts=PTS-STARTPTS[a1]`,
-          `[a0][a1]acrossfade=d=${transitionDuration.toFixed(6)}:c1=qsin:c2=qsin[aout]`
+          `[0:a:0]atrim=start=0:end=${end1.toFixed(6)},afade=t=out:st=${fadeOutStart.toFixed(6)}:d=${transitionDuration.toFixed(6)}:curve=qsin,asetpts=PTS-STARTPTS[a0]`,
+          `[1:a:0]atrim=start=${start2.toFixed(6)},afade=t=in:st=0:d=${transitionDuration.toFixed(6)}:curve=qsin,asetpts=PTS-STARTPTS[a1]`,
+          `[a0][a1]concat=n=2:v=0:a=1[aout]`
         );
       } else if (audioMode === "clean_cut") {
         const fadeOutStart = Math.max(0, end1 - transitionDuration);
@@ -979,7 +980,7 @@ async function handleExportCollage(req, res) {
         filters.push(
           `[0:a:0]atrim=start=${bottomStart1.toFixed(6)}:end=${end1.toFixed(6)},asetpts=PTS-STARTPTS[ba0]`,
           `[1:a:0]atrim=start=${start2.toFixed(6)}:end=${(start2 + postLen).toFixed(6)},asetpts=PTS-STARTPTS[ba1]`,
-          `[ba0][ba1]acrossfade=d=${blendDuration.toFixed(6)}:c1=tri:c2=tri,atrim=start=0:end=${collageSeconds.toFixed(6)},asetpts=PTS-STARTPTS[aout]`
+          `[ba0][ba1]acrossfade=d=${blendDuration.toFixed(6)}:c1=qsin:c2=qsin,atrim=start=0:end=${collageSeconds.toFixed(6)},asetpts=PTS-STARTPTS[aout]`
         );
       }
     } else {
@@ -991,10 +992,11 @@ async function handleExportCollage(req, res) {
       if (hasAudio) {
         const transitionDuration = Math.max(1.0 / fps, 5.0 / fps);
         if (audioMode === "micro_crossfade") {
+          const fadeOutStart = Math.max(0, (end1 - bottomStart1) - transitionDuration);
           filters.push(
-            `[0:a:0]atrim=start=${bottomStart1.toFixed(6)}:end=${end1.toFixed(6)},asetpts=PTS-STARTPTS[ba0]`,
-            `[1:a:0]atrim=start=${start2.toFixed(6)}:end=${(start2 + halfCollage).toFixed(6)},asetpts=PTS-STARTPTS[ba1]`,
-            `[ba0][ba1]acrossfade=d=${transitionDuration.toFixed(6)}:c1=qsin:c2=qsin,atrim=start=0:end=${collageSeconds.toFixed(6)},asetpts=PTS-STARTPTS[aout]`
+            `[0:a:0]atrim=start=${bottomStart1.toFixed(6)}:end=${end1.toFixed(6)},afade=t=out:st=${fadeOutStart.toFixed(6)}:d=${transitionDuration.toFixed(6)}:curve=qsin,asetpts=PTS-STARTPTS[ba0]`,
+            `[1:a:0]atrim=start=${start2.toFixed(6)}:end=${(start2 + halfCollage).toFixed(6)},afade=t=in:st=0:d=${transitionDuration.toFixed(6)}:curve=qsin,asetpts=PTS-STARTPTS[ba1]`,
+            `[ba0][ba1]concat=n=2:v=0:a=1,atrim=start=0:end=${collageSeconds.toFixed(6)},asetpts=PTS-STARTPTS[aout]`
           );
         } else if (audioMode === "clean_cut") {
           const fadeOutStart = Math.max(0, end1 - transitionDuration);
